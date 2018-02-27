@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
 
 const (
 	// acceptHeader is the GitHub Integrations Preview Accept header.
-	acceptHeader = "application/vnd.github.machine-man-preview+json"
-	apiBaseURL   = "https://api.github.com"
+	acceptHeader      = "application/vnd.github.machine-man-preview+json"
+	defaultApiBaseURL = "https://api.github.com"
 )
 
 // Transport provides a http.RoundTripper by wrapping an existing
@@ -45,11 +46,20 @@ var _ http.RoundTripper = &Transport{}
 
 // NewKeyFromFile returns a Transport using a private key from file.
 func NewKeyFromFile(tr http.RoundTripper, integrationID, installationID int, privateKeyFile string) (*Transport, error) {
+	return newKeyFromFile(defaultApiBaseURL, tr, integrationID, installationID, privateKeyFile)
+}
+
+// NewEnterpriseKeyFromFile returns a Transport using a private key from file.
+func NewEnterpriseKeyFromFile(url string, tr http.RoundTripper, integrationID, installationID int, privateKeyFile string) (*Transport, error) {
+	return newKeyFromFile(url, tr, integrationID, installationID, privateKeyFile)
+}
+
+func newKeyFromFile(url string, tr http.RoundTripper, integrationID, installationID int, privateKeyFile string) (*Transport, error) {
 	privateKey, err := ioutil.ReadFile(privateKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("could not read private key: %s", err)
 	}
-	return New(tr, integrationID, installationID, privateKey)
+	return NewWithURL(url, tr, integrationID, installationID, privateKey)
 }
 
 // Client is a HTTP client which sends a http.Request and returns a http.Response
@@ -70,12 +80,29 @@ func New(tr http.RoundTripper, integrationID, installationID int, privateKey []b
 		tr:             tr,
 		integrationID:  integrationID,
 		installationID: installationID,
-		BaseURL:        apiBaseURL,
+		BaseURL:        defaultApiBaseURL,
 		Client:         &http.Client{Transport: tr},
 		mu:             &sync.Mutex{},
 	}
 	var err error
 	t.appsTransport, err = NewAppsTransport(t.tr, t.integrationID, privateKey)
+	if err != nil {
+		return nil, err
+	}
+	return t, nil
+}
+
+func NewWithURL(url string, tr http.RoundTripper, integrationID, installationID int, privateKey []byte) (*Transport, error) {
+	t := &Transport{
+		tr:             tr,
+		integrationID:  integrationID,
+		installationID: installationID,
+		BaseURL:        url,
+		Client:         &http.Client{Transport: tr},
+		mu:             &sync.Mutex{},
+	}
+	var err error
+	t.appsTransport, err = NewEnterpriseAppsTransport(url, t.tr, t.integrationID, privateKey)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +138,11 @@ func (t *Transport) Token() (string, error) {
 }
 
 func (t *Transport) refreshToken() error {
-	req, err := http.NewRequest("POST", fmt.Sprintf("%s/installations/%v/access_tokens", t.BaseURL, t.installationID), nil)
+	prefix := t.BaseURL
+	if strings.HasSuffix(prefix, "/") {
+		prefix = strings.TrimSuffix(prefix, "/")
+	}
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/installations/%v/access_tokens", prefix, t.installationID), nil)
 	if err != nil {
 		return fmt.Errorf("could not create request: %s", err)
 	}
@@ -128,9 +159,5 @@ func (t *Transport) refreshToken() error {
 		return fmt.Errorf("received non 2xx response status %q when fetching %v", resp.Status, req.URL)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&t.token); err != nil {
-		return err
-	}
-
-	return nil
+	return json.NewDecoder(resp.Body).Decode(&t.token)
 }
