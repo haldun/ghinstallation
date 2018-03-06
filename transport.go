@@ -28,8 +28,8 @@ type Transport struct {
 	BaseURL        string            // baseURL is the scheme and host for GitHub API, defaults to https://api.github.com
 	Client         Client            // Client to use to refresh tokens, defaults to http.Client with provided transport
 	tr             http.RoundTripper // tr is the underlying roundtripper being wrapped
-	integrationID  int               // integrationID is the GitHub Integration's Installation ID
-	installationID int               // installationID is the GitHub Integration's Installation ID
+	integrationID  int64             // integrationID is the GitHub Integration's Installation ID
+	installationID int64             // installationID is the GitHub Integration's Installation ID
 	appsTransport  *AppsTransport
 
 	mu    *sync.Mutex  // mu protects token
@@ -45,16 +45,16 @@ type accessToken struct {
 var _ http.RoundTripper = &Transport{}
 
 // NewKeyFromFile returns a Transport using a private key from file.
-func NewKeyFromFile(tr http.RoundTripper, integrationID, installationID int, privateKeyFile string) (*Transport, error) {
+func NewKeyFromFile(tr http.RoundTripper, integrationID, installationID int64, privateKeyFile string) (*Transport, error) {
 	return newKeyFromFile(defaultApiBaseURL, tr, integrationID, installationID, privateKeyFile)
 }
 
 // NewEnterpriseKeyFromFile returns a Transport using a private key from file.
-func NewEnterpriseKeyFromFile(url string, tr http.RoundTripper, integrationID, installationID int, privateKeyFile string) (*Transport, error) {
+func NewEnterpriseKeyFromFile(url string, tr http.RoundTripper, integrationID, installationID int64, privateKeyFile string) (*Transport, error) {
 	return newKeyFromFile(url, tr, integrationID, installationID, privateKeyFile)
 }
 
-func newKeyFromFile(url string, tr http.RoundTripper, integrationID, installationID int, privateKeyFile string) (*Transport, error) {
+func newKeyFromFile(url string, tr http.RoundTripper, integrationID, installationID int64, privateKeyFile string) (*Transport, error) {
 	privateKey, err := ioutil.ReadFile(privateKeyFile)
 	if err != nil {
 		return nil, fmt.Errorf("could not read private key: %s", err)
@@ -75,7 +75,7 @@ type Client interface {
 // installations to ensure reuse of underlying TCP connections.
 //
 // The returned Transport's RoundTrip method is safe to be used concurrently.
-func New(tr http.RoundTripper, integrationID, installationID int, privateKey []byte) (*Transport, error) {
+func New(tr http.RoundTripper, integrationID, installationID int64, privateKey []byte) (*Transport, error) {
 	t := &Transport{
 		tr:             tr,
 		integrationID:  integrationID,
@@ -92,7 +92,7 @@ func New(tr http.RoundTripper, integrationID, installationID int, privateKey []b
 	return t, nil
 }
 
-func NewWithURL(url string, tr http.RoundTripper, integrationID, installationID int, privateKey []byte) (*Transport, error) {
+func NewWithURL(url string, tr http.RoundTripper, integrationID, installationID int64, privateKey []byte) (*Transport, error) {
 	t := &Transport{
 		tr:             tr,
 		integrationID:  integrationID,
